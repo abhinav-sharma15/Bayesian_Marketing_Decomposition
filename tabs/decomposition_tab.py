@@ -10,19 +10,21 @@ import io
 import plotly.express as px
 
 def run_bayesian_model(X, y):
-    X_ = (X - X.mean()) / X.std()
+    X_std = (X - X.mean()) / X.std()
+    y_std = (y - y.mean()) / y.std()
     coords = {"features": X.columns}
 
-    with pm.Model(coords=coords) as model:
+        with pm.Model(coords=coords) as model:
+        X_std_matrix = pm.Data("X_std_matrix", X_std.values)
         sigma = pm.Exponential("sigma", 1.0)
         beta = pm.Normal("beta", mu=0, sigma=1, dims="features")
         intercept = pm.Normal("intercept", mu=0, sigma=1)
 
-        mu = intercept + pm.math.dot(X_, beta)
-        likelihood = pm.Normal("y", mu=mu, sigma=sigma, observed=(y - y.mean()) / y.std())
+        mu = intercept + pm.math.dot(X_std_matrix, beta)  # Ensure correct matrix shape for PyMC
+        pm.Normal("y", mu=mu, sigma=sigma, observed=y_std)
 
         trace = pm.sample(1000, tune=1000, return_inferencedata=True, progressbar=True)
-    return trace, X.columns, X_, y
+    return trace, X_std, y_std, X, y
 
 def decomposition_tab():
     df = st.session_state.data.copy()
@@ -41,42 +43,45 @@ def decomposition_tab():
 
     for target in st.session_state.target_choice:
         st.subheader(f"Feature Decomposition for {target}")
-        X = df_filtered[features]
-        y = df_filtered[target]
 
-        if st.session_state.model_choice == "XGBoost/LightGBM with SHAP":
-            model = xgb.XGBRegressor(objective="reg:squarederror")
-            model.fit(X, y)
-            explainer = shap.Explainer(model)
-            shap_values = explainer(X)
+        # Use full dataset for Bayesian model
+        X_full = df[features]
+        y_full = df[target]
 
-            shap.summary_plot(shap_values, X, show=False)
-            st.pyplot(bbox_inches='tight')
+        trace, X_std, y_std, X_raw, y_raw = run_bayesian_model(X_full, y_full)
 
-            if st.button("Export SHAP Values CSV"):
-                shap_df = pd.DataFrame(shap_values.values, columns=features)
-                csv = shap_df.to_csv(index=False).encode('utf-8')
-                st.download_button("Download SHAP CSV", csv, f"shap_{target}.csv")
-        else:
-            with st.spinner("Running Bayesian model..."):
-                trace, feature_names, X_scaled, y_vec = run_bayesian_model(X, y)
+        # Let user choose a specific month or quarter for decomposition
+        df["MonthStr"] = df["Month"].dt.strftime("%Y-%m")
+        period_options = sorted(df["MonthStr"].unique())
+        selected_period = st.selectbox("Select Month for Decomposition", period_options)
+
+        df_period = df[df["MonthStr"] == selected_period]
+        X = df_period[features]
+        y = df_period[target]
+
+        with st.spinner("Running Bayesian model..."):
+                trace, X_std, y_std, X_raw, y_raw = run_bayesian_model(X, y)
 
                 beta_mean = trace.posterior["beta"].mean(dim=["chain", "draw"]).values
                 intercept_mean = trace.posterior["intercept"].mean().values.item()
-                sigma_mean = trace.posterior["sigma"].mean().values.item()
 
-                contributions = X_scaled.mean().values * beta_mean
-                predicted_total_change = contributions.sum() + intercept_mean
-                actual_mean = ((y_vec - y_vec.mean()) / y_vec.std()).mean()
-                unexplained = actual_mean - predicted_total_change
+                contrib_std = X_std.values * beta_mean  # Ensure proper broadcasting for contribution calculation
+                contrib_real = contrib_std * y.std()
+
+                contrib_df = pd.DataFrame(contrib_real, columns=X.columns)
+                mean_contrib = contrib_df.mean()
+
+                intercept_real = intercept_mean * y.std() + y.mean()
+                predicted_mean = intercept_real + mean_contrib.sum()
+                unexplained = y.mean() - predicted_mean
 
                 results_df = pd.DataFrame({
-                    "Feature": list(feature_names) + ["Intercept", "Unexplained"],
-                    "Contribution": list(contributions) + [intercept_mean, unexplained]
+                    "Feature": list(X.columns) + ["Intercept", "Unexplained"],
+                    "Contribution": list(mean_contrib) + [intercept_real, unexplained]
                 })
-                results_df["% of Total"] = 100 * results_df["Contribution"] / (results_df["Contribution"].sum())
+                results_df["% of Total"] = 100 * results_df["Contribution"] / results_df["Contribution"].sum()
 
-                st.dataframe(results_df)
+                st.dataframe(results_df.style.format({"Contribution": "{:.2f}", "% of Total": "{:.1f}%"}))
 
                 fig = px.bar(results_df, x="Feature", y="% of Total", text="% of Total",
                              title=f"Contribution Share to {target} (Bayesian Model)")
