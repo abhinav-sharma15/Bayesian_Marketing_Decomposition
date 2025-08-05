@@ -33,7 +33,7 @@ def decomposition_tab():
     df.dropna(subset=["Month"], inplace=True)
 
     features = ["Paid_Search_Traffic", "Organic_Traffic", "Email_Traffic",
-                "Affiliate_Traffic", "Discount_Intensity", "Personalization_Intensity"]
+        "Affiliate_Traffic", "Discount_Intensity", "Personalization_Intensity"]
 
     time_filter = st.slider("Select Date Range", min_value=df["Month"].min().date(),
                             max_value=df["Month"].max().date(), value=(df["Month"].min().date(), df["Month"].max().date()))
@@ -54,7 +54,6 @@ def decomposition_tab():
         df["MonthStr"] = df["Month"].dt.strftime("%Y-%m")
         period_options = sorted(df["MonthStr"].unique())
         selected_periods = st.multiselect("Select Months for Decomposition", period_options, default=[period_options[-1]])
-
         df_period = df[df["MonthStr"].isin(selected_periods)]
         X = df_period[features]
         y = df_period[target]
@@ -63,10 +62,10 @@ def decomposition_tab():
 
         X_std_selected = (X - X_full.mean()) / X_full.std()  # Re-standardize using training stats
 
-                beta_mean = trace.posterior["beta"].mean(dim=["chain", "draw"]).values
-                intercept_mean = trace.posterior["intercept"].mean().values.item()
+        beta_mean = trace.posterior["beta"].mean(dim=["chain", "draw"]).values
+        intercept_mean = trace.posterior["intercept"].mean().values.item()
 
-                contrib_std = X_std_selected.values * beta_mean  # Ensure proper broadcasting for contribution calculation
+            contrib_std = X_std_selected.values * beta_mean  # Ensure proper broadcasting for contribution calculation
                 contrib_real = contrib_std * y.std()
 
                 contrib_df = pd.DataFrame(contrib_real, columns=X.columns)
