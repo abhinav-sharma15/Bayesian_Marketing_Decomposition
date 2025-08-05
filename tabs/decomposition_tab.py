@@ -14,8 +14,8 @@ def run_bayesian_model(X, y):
     y_std = (y - y.mean()) / y.std()
     coords = {"features": X.columns}
 
-    X_std_matrix = pm.Data("X_std_matrix", X_std.values)
-    with pm.Model(coords=coords) as model:
+        with pm.Model(coords=coords) as model:
+        X_std_matrix = pm.Data("X_std_matrix", X_std.values)
         sigma = pm.Exponential("sigma", 1.0)
         beta = pm.Normal("beta", mu=0, sigma=1, dims="features")
         intercept = pm.Normal("intercept", mu=0, sigma=1)
