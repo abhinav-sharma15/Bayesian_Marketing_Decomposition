@@ -65,7 +65,7 @@ def decomposition_tab():
                 beta_mean = trace.posterior["beta"].mean(dim=["chain", "draw"]).values
                 intercept_mean = trace.posterior["intercept"].mean().values.item()
 
-                contrib_std = X_std * beta_mean
+                contrib_std = X_std.values * beta_mean  # Ensure proper broadcasting for contribution calculation
                 contrib_real = contrib_std * y.std()
 
                 contrib_df = pd.DataFrame(contrib_real, columns=X.columns)
