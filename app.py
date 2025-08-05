@@ -1,6 +1,11 @@
 import streamlit as st
 import pandas as pd
-from tabs import upload_tab, trends_tab, decomposition_tab, simulator_tab
+# from tabs import upload_tab, trends_tab, decomposition_tab, simulator_tab
+from tabs.upload_tab import upload_tab
+from tabs.trends_tab import trends_tab
+from tabs.decomposition_tab import decomposition_tab
+from tabs.simulator_tab import simulator_tab
+
 
 st.set_page_config(page_title="Bayesian Marketing Decomposition", layout="wide")
 
