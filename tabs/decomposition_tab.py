@@ -53,9 +53,9 @@ def decomposition_tab():
         # Let user choose a specific month or quarter for decomposition
         df["MonthStr"] = df["Month"].dt.strftime("%Y-%m")
         period_options = sorted(df["MonthStr"].unique())
-        selected_period = st.selectbox("Select Month for Decomposition", period_options)
+        selected_periods = st.multiselect("Select Months for Decomposition", period_options, default=[period_options[-1]])
 
-        df_period = df[df["MonthStr"] == selected_period]
+        df_period = df[df["MonthStr"].isin(selected_periods)]
         X = df_period[features]
         y = df_period[target]
 
@@ -86,6 +86,11 @@ def decomposition_tab():
                 fig = px.bar(results_df, x="Feature", y="% of Total", text="% of Total",
                              title=f"Contribution Share to {target} (Bayesian Model)")
                 st.plotly_chart(fig, use_container_width=True)
+
+                # Predicted vs Actual
+                y_pred = intercept_real + contrib_df.sum(axis=1)
+                comparison_df = pd.DataFrame({"Actual": y.values, "Predicted": y_pred})
+                st.line_chart(comparison_df)
 
                 if st.button("Export Posterior Summary CSV"):
                     summary_df = az.summary(trace, var_names=["beta"]).reset_index()
