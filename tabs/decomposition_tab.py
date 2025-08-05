@@ -65,38 +65,37 @@ def decomposition_tab():
         beta_mean = trace.posterior["beta"].mean(dim=["chain", "draw"]).values
         intercept_mean = trace.posterior["intercept"].mean().values.item()
 
-            contrib_std = X_std_selected.values * beta_mean  # Ensure proper broadcasting for contribution calculation
-                contrib_real = contrib_std * y.std()
+        contrib_std = X_std_selected.values * beta_mean  # Ensure proper broadcasting for contribution calculation
+        contrib_real = contrib_std * y.std()
 
-                contrib_df = pd.DataFrame(contrib_real, columns=X.columns)
-                mean_contrib = contrib_df.mean()
+        contrib_df = pd.DataFrame(contrib_real, columns=X.columns)
+        mean_contrib = contrib_df.mean()
+        intercept_real = intercept_mean * y.std() + y.mean()
+        predicted_mean = intercept_real + mean_contrib.sum()
+        unexplained = y.mean() - predicted_mean
+                
+        results_df = pd.DataFrame({
+            "Feature": list(X.columns) + ["Intercept", "Unexplained"],
+            "Contribution": list(mean_contrib) + [intercept_real, unexplained]
+        })
+        results_df["% of Total"] = 100 * results_df["Contribution"] / results_df["Contribution"].sum()
 
-                intercept_real = intercept_mean * y.std() + y.mean()
-                predicted_mean = intercept_real + mean_contrib.sum()
-                unexplained = y.mean() - predicted_mean
+        st.dataframe(results_df.style.format({"Contribution": "{:.2f}", "% of Total": "{:.1f}%"}))
 
-                results_df = pd.DataFrame({
-                    "Feature": list(X.columns) + ["Intercept", "Unexplained"],
-                    "Contribution": list(mean_contrib) + [intercept_real, unexplained]
-                })
-                results_df["% of Total"] = 100 * results_df["Contribution"] / results_df["Contribution"].sum()
+        fig = px.bar(results_df, x="Feature", y="% of Total", text="% of Total",
+                        title=f"Contribution Share to {target} (Bayesian Model)")
+        st.plotly_chart(fig, use_container_width=True)
 
-                st.dataframe(results_df.style.format({"Contribution": "{:.2f}", "% of Total": "{:.1f}%"}))
+        # Predicted vs Actual
+        y_pred = intercept_real + contrib_df.sum(axis=1)
+        comparison_df = pd.DataFrame({"Actual": y.values, "Predicted": y_pred})
+        st.line_chart(comparison_df)
 
-                fig = px.bar(results_df, x="Feature", y="% of Total", text="% of Total",
-                             title=f"Contribution Share to {target} (Bayesian Model)")
-                st.plotly_chart(fig, use_container_width=True)
+        if st.button("Export Posterior Summary CSV"):
+            summary_df = az.summary(trace, var_names=["beta"]).reset_index()
+            csv = summary_df.to_csv(index=False).encode('utf-8')
+            st.download_button("Download Posterior CSV", csv, f"bayesian_{target}_summary.csv")
 
-                # Predicted vs Actual
-                y_pred = intercept_real + contrib_df.sum(axis=1)
-                comparison_df = pd.DataFrame({"Actual": y.values, "Predicted": y_pred})
-                st.line_chart(comparison_df)
-
-                if st.button("Export Posterior Summary CSV"):
-                    summary_df = az.summary(trace, var_names=["beta"]).reset_index()
-                    csv = summary_df.to_csv(index=False).encode('utf-8')
-                    st.download_button("Download Posterior CSV", csv, f"bayesian_{target}_summary.csv")
-
-                st.subheader("Posterior Diagnostics")
-                st.pyplot(az.plot_forest(trace, var_names=["beta"], combined=True))
-                st.pyplot(az.plot_trace(trace))
+        st.subheader("Posterior Diagnostics")
+        st.pyplot(az.plot_forest(trace, var_names=["beta"], combined=True))
+        st.pyplot(az.plot_trace(trace))
