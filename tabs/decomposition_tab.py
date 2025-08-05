@@ -26,7 +26,7 @@ def run_bayesian_model(X, y):
 def decomposition_tab():
     df = st.session_state.data.copy()
     df = df[df["Country"].isin(st.session_state.selected_countries)]
-    df["Month"] = pd.to_datetime(df["Month"], format="%m/%d/%Y")
+    df["Month"] = pd.to_datetime(df["Month"], format="%d/%m/%Y")
 
     features = ["Paid_Search_Traffic", "Organic_Traffic", "Email_Traffic",
                 "Affiliate_Traffic", "Discount_Intensity", "Personalization_Intensity"]
