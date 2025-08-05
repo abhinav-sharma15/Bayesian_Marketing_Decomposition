@@ -7,6 +7,7 @@ import pymc as pm
 import numpy as np
 import arviz as az
 import io
+import plotly.express as px
 
 def run_bayesian_model(X, y):
     X_ = (X - X.mean()) / X.std()
@@ -21,12 +22,13 @@ def run_bayesian_model(X, y):
         likelihood = pm.Normal("y", mu=mu, sigma=sigma, observed=(y - y.mean()) / y.std())
 
         trace = pm.sample(1000, tune=1000, return_inferencedata=True, progressbar=True)
-    return trace, X.columns
+    return trace, X.columns, X_, y
 
 def decomposition_tab():
     df = st.session_state.data.copy()
     df = df[df["Country"].isin(st.session_state.selected_countries)]
-    df["Month"] = pd.to_datetime(df["Month"], format="%d/%m/%Y")
+    df["Month"] = pd.to_datetime(df["Month"], format="%d/%m/%Y", errors="coerce")
+    df.dropna(subset=["Month"], inplace=True)
 
     features = ["Paid_Search_Traffic", "Organic_Traffic", "Email_Traffic",
                 "Affiliate_Traffic", "Discount_Intensity", "Personalization_Intensity"]
@@ -47,6 +49,7 @@ def decomposition_tab():
             model.fit(X, y)
             explainer = shap.Explainer(model)
             shap_values = explainer(X)
+
             shap.summary_plot(shap_values, X, show=False)
             st.pyplot(bbox_inches='tight')
 
@@ -56,10 +59,42 @@ def decomposition_tab():
                 st.download_button("Download SHAP CSV", csv, f"shap_{target}.csv")
         else:
             with st.spinner("Running Bayesian model..."):
-                trace, feature_names = run_bayesian_model(X, y)
-                fig, ax = plt.subplots(figsize=(8, 4))
-                az.plot_forest(trace, var_names=["beta"], combined=True, ax=ax)
-                st.pyplot(fig)
+                trace, feature_names, X_scaled, y_vec = run_bayesian_model(X, y)
+
+                # Full matrix-based contribution computation
+                beta_mean = trace.posterior['beta'].mean(dim=['chain', 'draw']).values
+                intercept_mean = trace.posterior['intercept'].mean().values.item()
+
+                # Predict in standardized space
+                y_hat_std = intercept_mean + X_scaled @ beta_mean
+
+                # Feature-wise contribution per row (in standardized space)
+                contrib_std = X_scaled * beta_mean
+                contrib_real = contrib_std * y.std()
+
+                # Aggregate contributions across all rows (mean impact over time)
+                mean_contrib = contrib_real.mean(axis=0)
+                intercept_real = intercept_mean * y.std() + y.mean()
+                predicted_mean = intercept_real + mean_contrib.sum()
+                unexplained = y.mean() - predicted_mean
+
+                beta_mean = trace.posterior["beta"].mean(dim=["chain", "draw"]).values
+                intercept_mean = trace.posterior["intercept"].mean().values.item()
+                sigma_mean = trace.posterior["sigma"].mean().values.item()
+
+                y.mean() - predicted_total
+
+                results_df = pd.DataFrame({
+                    "Feature": list(feature_names) + ["Intercept", "Unexplained"],
+                    "Contribution": list(mean_contrib) + [intercept_real, unexplained]
+                })
+                results_df["% of Total"] = 100 * results_df["Contribution"] / results_df["Contribution"].sum()
+
+                st.dataframe(results_df.style.format({"Contribution": "{:.2f}", "% of Total": "{:.1f}%"}))
+
+                fig = px.bar(results_df, x="Feature", y="% of Total", text="% of Total",
+                             title=f"Contribution Share to {target} (Bayesian Model)")
+                st.plotly_chart(fig, use_container_width=True)
 
                 if st.button("Export Posterior Summary CSV"):
                     summary_df = az.summary(trace, var_names=["beta"]).reset_index()
@@ -67,4 +102,5 @@ def decomposition_tab():
                     st.download_button("Download Posterior CSV", csv, f"bayesian_{target}_summary.csv")
 
                 st.subheader("Posterior Diagnostics")
+                st.pyplot(az.plot_forest(trace, var_names=["beta"], combined=True))
                 st.pyplot(az.plot_trace(trace))
