@@ -59,6 +59,7 @@ def decomposition_tab():
                 st.download_button("Download SHAP CSV", csv, f"shap_{target}.csv")
         else:
             with st.spinner("Running Bayesian model..."):
+                # run_bayesian_model returns standardized features (X_scaled) and standardized target (y)
                 trace, feature_names, X_scaled, y_vec = run_bayesian_model(X, y)
 
                 # Full matrix-based contribution computation
@@ -76,13 +77,11 @@ def decomposition_tab():
                 mean_contrib = contrib_real.mean(axis=0)
                 intercept_real = intercept_mean * y.std() + y.mean()
                 predicted_mean = intercept_real + mean_contrib.sum()
-                unexplained = y.mean() - predicted_mean
+                unexplained = float(y.mean()) - float(predicted_mean)
 
                 beta_mean = trace.posterior["beta"].mean(dim=["chain", "draw"]).values
                 intercept_mean = trace.posterior["intercept"].mean().values.item()
                 sigma_mean = trace.posterior["sigma"].mean().values.item()
-
-                y.mean() - predicted_total
 
                 results_df = pd.DataFrame({
                     "Feature": list(feature_names) + ["Intercept", "Unexplained"],
