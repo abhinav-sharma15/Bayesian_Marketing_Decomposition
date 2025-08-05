@@ -5,7 +5,7 @@ import streamlit as st
 def trends_tab():
     df = st.session_state.data.copy()
     df = df[df["Country"].isin(st.session_state.selected_countries)]
-    df["Month"] = pd.to_datetime(df["Month"], errors="coerce", infer_datetime_format=True)
+   df["Month"] = pd.to_datetime(df["Month"], format="%d/%m/%Y", errors="coerce")
     df.sort_values("Month", inplace=True)
 
     metrics = ["Paid_Search_Traffic", "Organic_Traffic", "Email_Traffic",
