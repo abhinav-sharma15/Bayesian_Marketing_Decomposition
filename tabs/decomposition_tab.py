@@ -8,7 +8,7 @@ import numpy as np
 import arviz as az
 import io
 
-def run_bayesian_model(X, y):
+def decomposition_tab(X, y):
     X_ = (X - X.mean()) / X.std()
     coords = {"features": X.columns}
 
