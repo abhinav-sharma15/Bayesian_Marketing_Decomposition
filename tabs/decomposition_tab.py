@@ -60,15 +60,13 @@ def decomposition_tab():
         y = df_period[target]
 
         # Reuse full-period posterior; do not retrain model for selected months
-        beta_mean = trace.posterior["beta"].mean(dim=["chain", "draw"]).values
-        intercept_mean = trace.posterior["intercept"].mean().values.item()
 
-        X_std_selected = (X - X_full.mean()) / X_full.std()
+        X_std_selected = (X - X_full.mean()) / X_full.std()  # Re-standardize using training stats
 
                 beta_mean = trace.posterior["beta"].mean(dim=["chain", "draw"]).values
                 intercept_mean = trace.posterior["intercept"].mean().values.item()
 
-                contrib_std = X_std.values * beta_mean  # Ensure proper broadcasting for contribution calculation
+                contrib_std = X_std_selected.values * beta_mean  # Ensure proper broadcasting for contribution calculation
                 contrib_real = contrib_std * y.std()
 
                 contrib_df = pd.DataFrame(contrib_real, columns=X.columns)
