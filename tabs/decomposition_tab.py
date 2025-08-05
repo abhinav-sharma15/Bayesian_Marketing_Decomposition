@@ -65,13 +65,15 @@ def decomposition_tab():
                 intercept_mean = trace.posterior["intercept"].mean().values.item()
                 sigma_mean = trace.posterior["sigma"].mean().values.item()
 
-                contributions_real = X.mean().values * beta_mean
-                predicted_total = contributions_real.sum() + intercept_mean
+                contributions_std = X_scaled.mean().values * beta_mean
+                contributions_real = contributions_std * y.std()
+                intercept_real = intercept_mean * y.std() + y.mean()
+                predicted_total = contributions_real.sum() + intercept_real
                 unexplained_real = y.mean() - predicted_total
 
                 results_df = pd.DataFrame({
                     "Feature": list(feature_names) + ["Intercept", "Unexplained"],
-                    "Contribution": list(contributions_real) + [intercept_mean, unexplained_real]
+                    "Contribution": list(contributions_real) + [intercept_real, unexplained_real]
                 })
                 results_df["% of Total"] = 100 * results_df["Contribution"] / results_df["Contribution"].sum()
 
