@@ -14,12 +14,13 @@ def run_bayesian_model(X, y):
     y_std = (y - y.mean()) / y.std()
     coords = {"features": X.columns}
 
+    X_std_matrix = pm.Data("X_std_matrix", X_std.values)
     with pm.Model(coords=coords) as model:
         sigma = pm.Exponential("sigma", 1.0)
         beta = pm.Normal("beta", mu=0, sigma=1, dims="features")
         intercept = pm.Normal("intercept", mu=0, sigma=1)
 
-        mu = intercept + pm.math.dot(X_std.values, beta)  # Ensure correct matrix shape for PyMC
+        mu = intercept + pm.math.dot(X_std_matrix, beta)  # Ensure correct matrix shape for PyMC
         pm.Normal("y", mu=mu, sigma=sigma, observed=y_std)
 
         trace = pm.sample(1000, tune=1000, return_inferencedata=True, progressbar=True)
