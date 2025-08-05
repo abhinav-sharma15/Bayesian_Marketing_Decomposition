@@ -47,7 +47,6 @@ def decomposition_tab():
             model.fit(X, y)
             explainer = shap.Explainer(model)
             shap_values = explainer(X)
-            st.set_option('deprecation.showPyplotGlobalUse', False)
             shap.summary_plot(shap_values, X, show=False)
             st.pyplot(bbox_inches='tight')
 
