@@ -59,8 +59,11 @@ def decomposition_tab():
         X = df_period[features]
         y = df_period[target]
 
-        with st.spinner("Running Bayesian model..."):
-                trace, X_std, y_std, X_raw, y_raw = run_bayesian_model(X, y)
+        # Reuse full-period posterior; do not retrain model for selected months
+        beta_mean = trace.posterior["beta"].mean(dim=["chain", "draw"]).values
+        intercept_mean = trace.posterior["intercept"].mean().values.item()
+
+        X_std_selected = (X - X_full.mean()) / X_full.std()
 
                 beta_mean = trace.posterior["beta"].mean(dim=["chain", "draw"]).values
                 intercept_mean = trace.posterior["intercept"].mean().values.item()
