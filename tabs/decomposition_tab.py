@@ -14,28 +14,43 @@ import plotly.express as px
 
 def fit_bayes_full(X: pd.DataFrame, y: pd.Series):
     """Fit a Bayesian linear model on the FULL period.
-    Returns posterior and training stats needed for re-use on any subset.
-    Mirrors the common Colab pattern: standardize X, y; fit; reuse betas.
+    Coerces to numeric, standardizes using TRAIN stats, returns posterior + stats.
     """
+    # --- Coerce to numeric to avoid dtype issues inside PyMC
+    X_num = X.copy()
+    for c in X_num.columns:
+        X_num[c] = pd.to_numeric(X_num[c], errors="coerce")
+    X_num = X_num.fillna(0.0)
+
+    y_num = pd.to_numeric(y, errors="coerce").astype(float)
+    if y_num.isna().all():
+        y_num = pd.Series(np.zeros(len(y)), index=y.index)
+    y_num = y_num.fillna(y_num.mean())
+
     # Training standardization stats
-    x_mean = X.mean()
-    x_std = X.std().replace(0, 1.0)  # guard
-    y_mean = float(y.mean())
-    y_std = float(y.std() if y.std() != 0 else 1.0)
+    x_mean = X_num.mean()
+    x_std = X_num.std().replace(0, 1.0)  # guard against zero std
+    y_mean = float(y_num.mean())
+    y_std = float(y_num.std() if y_num.std() != 0 else 1.0)
 
-    X_std = (X - x_mean) / x_std
-    y_std_vec = (y - y_mean) / y_std
+    X_std = (X_num - x_mean) / x_std
+    y_std_vec = (y_num - y_mean) / y_std
 
-    coords = {"features": X.columns}
+    coords = {"features": list(X_num.columns)}
 
     with pm.Model(coords=coords) as model:
-        X_std_data = pm.MutableData("X_std_data", X_std.values)
+        X_std_np = X_std.to_numpy(dtype="float64")
+        y_std_np = y_std_vec.to_numpy(dtype="float64")
+
+        # Register design matrix as shared data for PyMC
+        X_std_data = pm.MutableData("X_std_data", X_std_np)
+
         sigma = pm.Exponential("sigma", 1.0)
         beta = pm.Normal("beta", mu=0, sigma=1, dims="features")
         intercept = pm.Normal("intercept", mu=0, sigma=1)
 
         mu = intercept + pm.math.dot(X_std_data, beta)
-        pm.Normal("y", mu=mu, sigma=sigma, observed=y_std_vec.values)
+        pm.Normal("y", mu=mu, sigma=sigma, observed=y_std_np)
 
         trace = pm.sample(1000, tune=1000, return_inferencedata=True, progressbar=True)
 
@@ -44,45 +59,43 @@ def fit_bayes_full(X: pd.DataFrame, y: pd.Series):
         "x_std": x_std,
         "y_mean": y_mean,
         "y_std": y_std,
-        "feature_names": list(X.columns),
+        "feature_names": list(X_num.columns),
     }
     return trace, train_stats
 
 
 def period_contributions_from_posterior(trace, train_stats, X_period: pd.DataFrame, y_period: pd.Series):
-    """Compute per-feature contributions for a selected period using the full-period posterior.
-    Steps:
-      1) Standardize X_period using TRAIN stats
-      2) Row-wise contrib in std space: X_std * beta_mean
-      3) Convert contrib back to original units by * y_std
-      4) Aggregate (mean over rows) to get average contribution for the period
-      5) Optionally compute intercept & unexplained
-    """
+    """Compute per-feature contributions for a selected period using the full-period posterior."""
     x_mean = train_stats["x_mean"]
     x_std = train_stats["x_std"]
     y_mean = train_stats["y_mean"]
     y_std = train_stats["y_std"]
     feature_names = train_stats["feature_names"]
 
-    # Standardize period using TRAIN stats
-    X_std = (X_period - x_mean) / x_std
-    X_std = X_std[feature_names]  # align columns
+    # Coerce period X to numeric and align columns
+    Xp = X_period.copy()
+    for c in Xp.columns:
+        Xp[c] = pd.to_numeric(Xp[c], errors="coerce")
+    Xp = Xp.fillna(0.0)
+    Xp = Xp[feature_names]  # ensure same order/cols
+
+    # Standardize using TRAIN stats
+    X_std = (Xp - x_mean) / x_std
 
     # Posterior means
     beta_mean = trace.posterior["beta"].mean(dim=["chain", "draw"]).values  # (n_features,)
     intercept_mean = float(trace.posterior["intercept"].mean().values)
 
-    # Row-wise contributions in std space
-    contrib_std = X_std.values * beta_mean  # (n_rows, n_features)
-    contrib_real_rows = contrib_std * y_std  # back to original y units
+    # Row-wise contributions in standardized space -> back to original units
+    contrib_std = X_std.to_numpy(dtype="float64") * beta_mean           # (n_rows, n_features)
+    contrib_real_rows = contrib_std * y_std                              # back to target units
+    mean_contrib = contrib_real_rows.mean(axis=0)                        # average over period
 
-    # Average contribution across selected rows (period)
-    mean_contrib = contrib_real_rows.mean(axis=0)  # (n_features,)
-
-    # Intercept & unexplained (optional)
+    # Intercept & predicted mean for the period
     intercept_real = intercept_mean * y_std + y_mean
     y_pred_rows = intercept_real + contrib_real_rows.sum(axis=1)
-    y_period_mean = float(y_period.mean()) if len(y_period) else 0.0
+    y_period_num = pd.to_numeric(y_period, errors="coerce").astype(float).fillna(0.0)
+    y_period_mean = float(y_period_num.mean()) if len(y_period_num) else 0.0
     unexplained = y_period_mean - float(y_pred_rows.mean())
 
     contrib_df = pd.DataFrame({
@@ -92,7 +105,7 @@ def period_contributions_from_posterior(trace, train_stats, X_period: pd.DataFra
     meta = {
         "intercept_real": intercept_real,
         "unexplained": unexplained,
-        "y_pred_mean": float(y_pred_rows.mean()) if len(y_period) else intercept_real + mean_contrib.sum(),
+        "y_pred_mean": float(y_pred_rows.mean()) if len(y_period_num) else intercept_real + mean_contrib.sum(),
         "y_actual_mean": y_period_mean,
     }
     return contrib_df, meta
